@@ -2,6 +2,9 @@
 #include "sfts_client.h"
 
 
+
+/* 创建两个线程：一个负责显示菜单，一个负责接收网络数据 。 在上传或下载数据都会创建一个线程来传输，支持上传和下载同时进行 */
+
 /*
 typedef enum menu_operations {
     M_OPT_LOGIN = 1,
@@ -20,16 +23,21 @@ typedef struct menu_opt_handler {
  
 */
 
-struct stfs_client_informations
+typedef struct stfs_client_informations
 {
     char username[50];
     char password[50];
 
+    int socketfd;
     struct sockaddr_in sock_server_addr;
-};
 
-static stfs_client_informations  sfts_client;
+    pthread_t recv_thread;
+    int recv_thread_id;
+}stfs_c_info_t;
 
+static stfs_c_info_t  sfts_client;
+
+void *thread_recv(void *arg);
 
 static void menu_login_cb(void);
 static void menu_upload_cb(void);
@@ -113,10 +121,41 @@ void upload_menu(void)
     scanf("%s", filename);
 }
 
+int network_init(void)
+{
+	sfts_client.socketfd = socket(AF_INET, SOCK_STREAM, 0);    //创建套接字
+	sfts_client.sock_server_addr.sin_family      = AF_INET;
+	sfts_client.sock_server_addr.sin_port        = htons(SERVER_PORT);
+ 	if (0 == inet_aton(argv[1], &sfts_client.sock_server_addr.sin_addr))
+ 	{
+		perror("invalid server_ip\n");
+		return -1;
+	}
+	memset(sfts_client.sock_server_addr.sin_zero, 0, 8);
+    
+	ret = connect(sfts_client.socketfd, (const struct sockaddr *)&sfts_client.sock_server_addr, sizeof(struct sockaddr));	
+
+	if (-1 == ret)
+	{
+		perror("connect error!\n");
+		return -1;
+	}
+
+    ret = pthread_create(&sfts_client.recv_thread, NULL, thread_recv, (void *)&sfts_client.socketfd);  //创建负责接收线程
+    if (-1 == ret)
+    {
+        perror("create recv errorthread error!\n");
+        return -1;
+    }
+
+    return 0;
+}
+
 
 int main(int argc, char **argv)
 {
-    
+    // signal(SIGPIPE, SIG_IGN);  
+    // signal(SIGINT, SIG_IGN);            //忽略ctrl + c发送杀死终端的SIGINT信号  使用菜单提供的退出操作才能退出了客户端
     //1、显示logo
     system_logo();
 
@@ -168,4 +207,23 @@ static void menu_show_cur_dir_cb(void)
 static void menu_show_server_file_cb(void)
 {
 
+}
+
+void *thread_recv(void *arg)
+{
+    file_pack_fmt_t file;
+    int recv_len;
+    int socket = *(int *)arg;
+
+    while (1) 
+    {
+        recv_len = recv(socket, &file, sizeof(file_pack_fmt_t), 0);
+        if (recv_len <= 0)
+        {
+            printf("socket recv data error\r\n");
+            continue;
+        }
+        
+        
+    }
 }
